@@ -12,4 +12,4 @@
                  [com.hazelcast/hazelcast-enterprise "5.7.0-SNAPSHOT"]]
   :profiles {:uberjar {:uberjar-name "hazelcast-server.jar"}}
   :main jepsen.hazelcast-server
-  :aot [jepsen.hazelcast-server]
+  :aot [jepsen.hazelcast-server])
