@@ -5,7 +5,10 @@
             [clojure.java.io :as io]
             [clojure.string :as str])
   (:import (com.hazelcast.core Hazelcast)
-           (com.hazelcast.config.cp FencedLockConfig SemaphoreConfig CPSubsystemConfig)
+           (com.hazelcast.config.cp FencedLockConfig
+                                    SemaphoreConfig
+                                    CPSubsystemConfig
+                                    CPMapConfig)
            (com.hazelcast.config Config
                                  MapConfig
                                  MergePolicyConfig
@@ -27,7 +30,10 @@
         raftAlgorithmConfig (.getRaftAlgorithmConfig cpSubsystemConfig)
         semaphoreConfig (SemaphoreConfig. "jepsen.cpSemaphore" false, 0)
         lockConfig1 (FencedLockConfig. "jepsen.cpLock1" 1)
-        lockConfig2 (FencedLockConfig. "jepsen.cpLock2" 2)]
+        lockConfig2 (FencedLockConfig. "jepsen.cpLock2" 2)
+        cpMapConfig (doto (CPMapConfig. "jepsen.cp.map.purge")
+                              (.setPurgeEnabled true))
+        ]
 
        (.setLeaderElectionTimeoutInMillis raftAlgorithmConfig 1000)
        (.setLeaderHeartbeatPeriodInMillis raftAlgorithmConfig 1500)
@@ -43,6 +49,8 @@
        (.addSemaphoreConfig cpSubsystemConfig semaphoreConfig)
        (.addLockConfig cpSubsystemConfig lockConfig1)
        (.addLockConfig cpSubsystemConfig lockConfig2)
+       (.addCPMapConfig cpSubsystemConfig cpMapConfig)
+
        cpSubsystemConfig))
 
 (defn -main

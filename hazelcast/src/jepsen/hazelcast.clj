@@ -1,10 +1,11 @@
 (ns jepsen.hazelcast
   (:gen-class)
   (:require [clojure.tools.logging :refer :all]
+            [clojure.tools.logging :refer [info]]
+            [clojure.tools.logging :refer [warn]]
             [clojure.string :as str]
             [clojure.java.shell :refer [sh]]
             [clojure.java.io :as io]
-            [clojure.string :as str]
             [knossos.model :as model]
             [jepsen [checker :as checker]
              [cli :as cli]
@@ -23,9 +24,12 @@
             [jepsen.control.net :as cn]
             [jepsen.os.debian :as debian])
   (:import (java.util.concurrent TimeUnit)
+           (java.time Duration)
            (com.hazelcast.client.config ClientConfig)
+           (com.hazelcast.config Config)
+           (com.hazelcast.config.cp CPMapConfig)
            (com.hazelcast.client HazelcastClient)
-           (com.hazelcast.core HazelcastInstance)
+           (com.hazelcast.core Hazelcast HazelcastInstance)
            (knossos.model Model)
            (java.util UUID)
            (java.io IOException)))
@@ -62,6 +66,8 @@
 (def reentrant-lock-acquire-count 2)
 (def num-permits 2)
 (def invalid-fence 0)
+(def purgeable-cp-map-name "jepsen.cp.map.purge")
+
 
 (defn build-server!
   "Ensures the server jar is ready"
@@ -158,6 +164,140 @@
         ; Connect to our node
         _ (.addAddress net (into-array String [node]))]
     (HazelcastClient/newHazelcastClient config)))
+
+(defn connect-lite-member
+  ^HazelcastInstance
+  [node test]
+  (let [config (Config.)
+        network (.getNetworkConfig config)
+        join (.getJoin network)
+        tcp-ip (.getTcpIpConfig join)
+        cp-subsystem (.getCPSubsystemConfig config)
+
+        ;; CP Map config
+        cp-map-config (doto (CPMapConfig. purgeable-cp-map-name)
+                        (.setPurgeEnabled true))]
+
+    ;; CP subsystem config
+    (.setCPMemberCount cp-subsystem 5)
+    (.addCPMapConfig cp-subsystem cp-map-config)
+
+    ;; Lite member (NOT CP eligible)
+    (.setLiteMember config true)
+
+    ;; Disable multicast
+    (.setEnabled (.getMulticastConfig join) false)
+
+    ;; Enable TCP/IP join
+    (.setEnabled tcp-ip true)
+    (doseq [n (:nodes test)]
+      (.addMember tcp-ip (cn/ip n)))
+
+    (.setProperty config "hazelcast.shutdownhook.enabled" "false")
+    (.setProperty config "hazelcast.enterprise.license.key" (:license test))
+
+    (info "Starting Hazelcast LITE MEMBER on" node)
+    (Hazelcast/newHazelcastInstance config)))
+
+
+(defrecord PurgeableCPMapModel [state]
+  Model
+  (step [this op]
+    ;; 1 Ignore non-completed ops
+    (if (not= :ok (:type op))
+      this
+
+      (case (:f op)
+
+        :put
+        ;; 2 Writes update model state
+        (PurgeableCPMapModel.
+          (assoc state (:key op) (:value op)))
+
+        :get
+        ;; 3 Reads validate against model state
+        (let [expected (get state (:key op))]
+          (if (= expected (:value op))
+            this
+            (let [inc (model/inconsistent
+                        (str "expected " expected ", got " (:value op)))]
+              ;; 4 Attach the real op to the inconsistent model
+              (assoc inc :op op))))
+
+        :purge
+        ;; 5 Purge resets state
+        (PurgeableCPMapModel. {})
+
+        ;; default: ignore unknown ops
+        this))))
+
+(defn purgeable-cp-map-model []
+  (PurgeableCPMapModel. {}))
+
+(defn cp-map-purge-client
+  ([]
+   (cp-map-purge-client nil nil))
+  ([conn cp-map]
+   (reify client/Client
+
+     (open! [_ test node]
+       (let [conn (connect-lite-member node test)
+             cp-map (.getMap (.getCPSubsystem conn) purgeable-cp-map-name)]
+         (cp-map-purge-client conn cp-map)))
+
+     (setup! [_ test]
+       ;; Populate CP map before the test starts
+       (doseq [i (range 1000)]
+         (.set cp-map (str "key-" i) i)))
+
+     (invoke! [_ test op]
+       (try
+         (case (:f op)
+
+           :put
+           (do
+             (.set cp-map (:key op) (:value op))
+             (assoc op :type :ok))
+
+           :get
+             (assoc op :type :ok
+                        :value (.get cp-map (:key op)))
+
+           :purge
+           (let [purged-count
+                 (.join
+                   (.purgeCPMap
+                     (.getCPDataStructureManagementService
+                       (.getCPSubsystem conn))
+                     purgeable-cp-map-name
+                     (Duration/ofSeconds 0)))]
+             (assoc op :type :ok :value purged-count))
+
+           (assoc op :type :fail :error :unknown-op))
+
+         (catch Exception e
+           (assoc op :type :fail :error (.getMessage e)))))
+
+     (teardown! [_ test]
+       (.shutdown conn))
+
+     (close! [_ test]
+       (.shutdown conn))
+
+     client/Reusable
+     (reusable? [_ test] true))))
+
+(def purge-generator
+  (->> (fn []
+         (let [k (str "key-" (rand-int 2000))
+               v (rand-int 100000)]
+           (gen/mix
+            [{:type :invoke :f :put :key k :value v}
+             {:type :invoke :f :purge}
+             {:type :invoke :f :get :key k}])))
+       gen/each-thread
+       (gen/stagger 0.3)
+       (gen/limit 100)))
 
 (defn create-atomic-long
   "Creates a new CP based AtomicLong"
@@ -780,6 +920,16 @@
                                                 gen/each-thread
                                                 (gen/stagger 0.25))
                                 :checker   (checker/linearizable {:model (model/cas-register 0)})}
+     :cp-map-purge-lite-member {:client  (cp-map-purge-client)
+                                :generator purge-generator
+                                :final-generator
+                                (->> (gen/once
+                                      (fn []
+                                        (let [k (str "key-" (rand-int 2000))]
+                                          {:type :invoke :f :get :key k})))
+                                     gen/each-thread)
+                                :checker (checker/linearizable
+                                          {:model (purgeable-cp-map-model)})}
      :snapshot-stress           {:client (snapshot-stress-client nil nil cp-direct-to-leader-routing)
                                  :generator (->> (fn []
                                                   (let [k (str "key-" (rand-int 100000))

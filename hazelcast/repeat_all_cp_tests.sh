@@ -6,7 +6,7 @@ ssh-keyscan -t ssh-ed25519 n3 >> ~/.ssh/known_hosts
 ssh-keyscan -t ssh-ed25519 n4 >> ~/.ssh/known_hosts
 ssh-keyscan -t ssh-ed25519 n5 >> ~/.ssh/known_hosts
 
-tests=("non-reentrant-lock" "reentrant-lock" "non-reentrant-fenced-lock" "reentrant-fenced-lock" "semaphore" "id-gen-long" "cas-long" "cas-reference" "cas-cp-map" "snapshot-stress")
+tests=("non-reentrant-lock" "reentrant-lock" "non-reentrant-fenced-lock" "reentrant-fenced-lock" "semaphore" "id-gen-long" "cas-long" "cas-reference" "cas-cp-map" "snapshot-stress" "cp-map-purge-lite-member")
 
 if [ $# -lt 3 ]; then
 	echo "Usage: ./repeat_all_cp_tests.sh repeat test_duration license [tests...]"
@@ -36,7 +36,7 @@ run_single_test () {
     cp_direct_to_leader_routing=$4
     echo "Running '$test_name' test with '$nemesis' nemesis, persistent=$persistent, cp_direct_to_leader_routing=$cp_direct_to_leader_routing"
 
-    lein run test --workload "${test_name}" --time-limit "${test_duration}" --license "${license}" --nemesis "${nemesis}" --persistent "${persistent} --cp-direct-to-leader-routing ${cp_direct_to_leader_routing}"
+    lein run test --workload "${test_name}" --time-limit "${test_duration}" --license "${license}" --nemesis "${nemesis}" --persistent "${persistent}" --cp-direct-to-leader-routing "${cp_direct_to_leader_routing}"
 
     if [ $? != '0' ]; then
         echo "'$test_name' test failed"

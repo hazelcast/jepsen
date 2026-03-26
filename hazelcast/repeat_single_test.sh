@@ -13,6 +13,6 @@ persistent=$5
 license=$6
 cp_direct_to_leader_routing=$7
 
-
 lein run test --workload "${test_name}" --test-count "${repeat}" --time-limit "${test_duration}" \
-  --nemesis "${nemesis}" --license "${license}" --persistent "${persistent} --cp-direct-to-leader-routing ${cp_direct_to_leader_routing}"
+  --nemesis "${nemesis}" --license "${license}" --persistent "${persistent}" \
+  --cp-direct-to-leader-routing "${cp_direct_to_leader_routing}"

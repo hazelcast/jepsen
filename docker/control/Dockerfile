@@ -12,6 +12,10 @@ STOPSIGNAL SIGRTMIN+3
 ARG GITHUB_TOKEN
 ENV GITHUB_TOKEN=${GITHUB_TOKEN}
 
+# Optional repo owner or organization name (defaults to 'hazelcast')
+ARG REPO_OWNER=hazelcast
+ENV REPO_OWNER=${REPO_OWNER}
+
 # Optional branch or tag to clone (defaults to 'master')
 ARG MONOREPO_BRANCH=master
 ENV MONOREPO_BRANCH=${MONOREPO_BRANCH}
@@ -72,7 +76,7 @@ COPY jepsen /jepsen/
 
 # Clone and build Hazelcast Mono repository
 WORKDIR /app
-RUN git clone --depth 1 --branch "${MONOREPO_BRANCH}" https://x-access-token:${GITHUB_TOKEN}@github.com/hazelcast/hazelcast-mono.git && \
+RUN git clone --depth 1 --branch "${MONOREPO_BRANCH}" https://x-access-token:${GITHUB_TOKEN}@github.com/${REPO_OWNER}/hazelcast-mono.git && \
     cd hazelcast-mono && \
     ./mvnw clean install -DskipTests -Dcheckstyle.skip -Pquick -q -pl '!hazelcast-enterprise-extensions/hazelcast-enterprise-cdc-db2-tests' && \
     cd .. && \
