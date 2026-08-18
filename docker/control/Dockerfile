@@ -84,3 +84,5 @@ COPY ./bashrc /root/.bashrc
 COPY ./init.sh /init.sh
 RUN dos2unix /init.sh /root/.bashrc && \
     chmod +x /init.sh
+
+CMD ["/init.sh"]
