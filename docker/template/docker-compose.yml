@@ -54,6 +54,8 @@ services:
 %%DEPS%%
     build:
       context: ./control
+      additional_contexts:
+        mono: ${MONO_DIR}
       args:
         - GITHUB_TOKEN=${GITHUB_TOKEN}
         - MONOREPO_BRANCH=${MONOREPO_BRANCH:-master}

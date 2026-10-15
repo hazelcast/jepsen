@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
 
-echo "===> In up script ===> the GitHub token is: ${GITHUB_TOKEN}"
-
-
 # "To provide additional docker compose args, set the COMPOSE var. Ex:
 # COMPOSE="-f FILE_PATH_HERE"
 
@@ -28,12 +25,16 @@ exists() {
 }
 
 JEPSEN_ROOT=${JEPSEN_ROOT:-""}
-GITHUB_TOKEN=${GITHUB_TOKEN}
+GITHUB_TOKEN=${GITHUB_TOKEN:-}
 
 
 # Change directory to the parent directory of this script. Taken from:
 # https://stackoverflow.com/a/246128/3858681
 pushd "$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )/.."
+
+# Mono checkout used as the "mono" build context of the control image.
+# The default is an empty directory, so the Dockerfile clones mono itself.
+export MONO_DIR="${MONO_DIR:-$PWD/empty-mono}"
 
 HELP=0
 INIT_ONLY=0
