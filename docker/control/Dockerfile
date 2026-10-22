@@ -71,13 +71,23 @@ RUN if [ -f /jepsen/jepsen/project.clj ]; then \
     fi
 COPY jepsen /jepsen/
 
-# Clone and build Hazelcast Mono repository
+# Build Hazelcast Mono. Jenkins passes its own checkout as the "mono" build
+# context. Without it (local bin/up), the context is empty and mono is cloned.
+# Writes to the bind mount are discarded; only ~/.m2 ends up in the image.
 WORKDIR /app
-RUN git clone --depth 1 --branch "${MONOREPO_BRANCH}" https://x-access-token:${GITHUB_TOKEN}@github.com/hazelcast/hazelcast-mono.git && \
-    cd hazelcast-mono && \
-    ./mvnw clean install -DskipTests -Dcheckstyle.skip -Pquick -q -pl '!hazelcast-enterprise-extensions/hazelcast-enterprise-cdc-db2-tests' && \
-    cd .. && \
-    rm -rf hazelcast-mono
+RUN --mount=type=bind,from=mono,target=/src/mono,rw \
+    set -e; \
+    if [ -f /src/mono/pom.xml ]; then \
+      echo "Building hazelcast-mono from the build context"; \
+      cd /src/mono; \
+    else \
+      echo "Cloning hazelcast-mono branch ${MONOREPO_BRANCH}"; \
+      git clone --depth 1 --branch "${MONOREPO_BRANCH}" https://x-access-token:${GITHUB_TOKEN}@github.com/hazelcast/hazelcast-mono.git /app/hazelcast-mono; \
+      cd /app/hazelcast-mono; \
+    fi; \
+    ./mvnw clean install -DskipTests -Dcheckstyle.skip -Pquick -q -pl '!hazelcast-enterprise-extensions/hazelcast-enterprise-cdc-db2-tests'; \
+    ./mvnw -q help:evaluate -Dexpression=project.version -DforceStdout > /etc/hz-version; \
+    rm -rf /app/hazelcast-mono
 
 # Setup initialization scripts
 COPY ./bashrc /root/.bashrc

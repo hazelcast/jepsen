@@ -116,6 +116,7 @@
     (setup! [_ test node]
       (build-server! test node)
       (jepsen/synchronize test)
+      ;; CI jobs label their results with this JDK version; update them when it changes.
       (debian/install [:openjdk-17-jdk-headless])
       (install!)
       (start! test node)
